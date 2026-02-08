@@ -323,13 +323,19 @@ func preloadCloudKit() {
 
 ## References
 
+### Implementation Guides
 - [CKSyncEngine Guide](references/cksyncengine.md) — Complete implementation walkthrough (iOS 17+)
 - [CRUD Operations](references/crud-operations.md) — Direct database operations, queries, assets
 - [Operations Reference](references/operations.md) — All CKOperation classes, batching, pagination
 - [Subscriptions & Notifications](references/subscriptions-notifications.md) — Push notifications, real-time sync
+
+### Features
 - [Sharing](references/sharing.md) — CKShare, UICloudSharingController, zone sharing
 - [User Discovery](references/user-discovery.md) — CKUserIdentity, finding users, discoverability
 - [Privacy & Security](references/privacy-security.md) — Encryption, access controls, GDPR compliance
+
+### Reference
+- [API Reference](references/api-reference.md) — Complete class/method listing for all CloudKit APIs
 - [Error Handling](references/error-handling.md) — All CKError codes and retry strategies
 - [Schema Design](references/schema-design.md) — Versioning, references, encryption, migrations
 - [Troubleshooting](references/troubleshooting.md) — Common issues, debugging, CloudKit Dashboard
