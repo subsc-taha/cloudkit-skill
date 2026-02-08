@@ -328,6 +328,8 @@ func preloadCloudKit() {
 - [Operations Reference](references/operations.md) — All CKOperation classes, batching, pagination
 - [Subscriptions & Notifications](references/subscriptions-notifications.md) — Push notifications, real-time sync
 - [Sharing](references/sharing.md) — CKShare, UICloudSharingController, zone sharing
+- [User Discovery](references/user-discovery.md) — CKUserIdentity, finding users, discoverability
+- [Privacy & Security](references/privacy-security.md) — Encryption, access controls, GDPR compliance
 - [Error Handling](references/error-handling.md) — All CKError codes and retry strategies
 - [Schema Design](references/schema-design.md) — Versioning, references, encryption, migrations
 - [Troubleshooting](references/troubleshooting.md) — Common issues, debugging, CloudKit Dashboard
