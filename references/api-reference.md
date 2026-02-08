@@ -36,6 +36,13 @@ container.sharedCloudDatabase        // CKDatabase
 // Account Status
 try await container.accountStatus()  // CKAccountStatus
 
+// CKAccountStatus enum
+.available                 // iCloud available
+.noAccount                 // No iCloud account
+.restricted                // Parental controls/MDM
+.couldNotDetermine         // Check failed
+.temporarilyUnavailable    // Try again later
+
 // User Record
 try await container.userRecordID()   // CKRecord.ID
 
@@ -58,7 +65,12 @@ Storage layer.
 
 ```swift
 // Properties
-database.databaseScope  // .private, .public, .shared
+database.databaseScope  // CKDatabase.Scope
+
+// Scope Enum
+CKDatabase.Scope.private   // User's private data
+CKDatabase.Scope.public    // All users
+CKDatabase.Scope.shared    // Shared with user
 
 // Records
 try await database.save(record)
@@ -281,7 +293,7 @@ operation.queryResultBlock = { result in }  // includes cursor
 
 ### CKLocationSortDescriptor
 
-Sort by distance.
+Sort by distance from a location.
 
 ```swift
 let descriptor = CKLocationSortDescriptor(
@@ -289,6 +301,25 @@ let descriptor = CKLocationSortDescriptor(
     relativeLocation: userLocation
 )
 query.sortDescriptors = [descriptor]
+
+// Properties
+descriptor.relativeLocation    // CLLocation
+```
+
+### CKQueryOperation.Cursor
+
+Pagination cursor for large result sets.
+
+```swift
+// From query result
+operation.queryResultBlock = { result in
+    if case .success(let cursor) = result {
+        if let cursor = cursor {
+            // More results available
+            let nextOp = CKQueryOperation(cursor: cursor)
+        }
+    }
+}
 ```
 
 ---
@@ -459,6 +490,61 @@ let options = CKAllowedSharingOptions(
     allowedParticipantPermissionOptions: [.readOnly, .readWrite],
     allowedParticipantAccessOptions: [.anyoneWithLink, .specifiedRecipientsOnly]
 )
+
+// Standard options
+CKAllowedSharingOptions.standard  // Default permissions
+```
+
+### CKShareTransferRepresentation
+
+For drag-and-drop sharing (iOS 16+).
+
+```swift
+// In Transferable conformance
+static var transferRepresentation: some TransferRepresentation {
+    CKShareTransferRepresentation { item in
+        // Return CKShare for this item
+        return item.share
+    }
+}
+```
+
+### CKSystemSharingUIObserver
+
+Observe system sharing UI events.
+
+```swift
+let observer = CKSystemSharingUIObserver(container: container)
+observer.systemSharingUIDidSaveShareBlock = { recordID, share, error in }
+observer.systemSharingUIDidStopSharingBlock = { recordID, error in }
+```
+
+### UICloudSharingController
+
+UIKit sharing controller.
+
+```swift
+// Create from existing share
+let controller = UICloudSharingController(share: share, container: container)
+
+// Create with preparation handler
+let controller = UICloudSharingController { controller, preparationHandler in
+    // Create share and call preparationHandler(share, container, error)
+}
+
+// Properties
+controller.delegate = self
+controller.availablePermissions = [.allowReadOnly, .allowReadWrite, .allowPrivate]
+controller.share                  // CKShare?
+controller.popoverPresentationController  // For iPad
+
+// Delegate methods
+func cloudSharingController(_:, failedToSaveShareWithError:)
+func cloudSharingControllerDidSaveShare(_:)
+func cloudSharingControllerDidStopSharing(_:)
+func itemTitle(for:) -> String?
+func itemThumbnailData(for:) -> Data?
+func itemType(for:) -> String?
 ```
 
 ---
@@ -468,14 +554,42 @@ let options = CKAllowedSharingOptions(
 ### CKOperation (Base)
 
 ```swift
+// Identification
+operation.operationID             // CKOperation.ID
+
+// Configuration
+operation.configuration           // CKOperation.Configuration
 operation.configuration.timeoutIntervalForRequest = 30
 operation.configuration.timeoutIntervalForResource = 300
 operation.configuration.isLongLived = true
-operation.qualityOfService = .userInitiated
+operation.configuration.allowsCellularAccess = true
+operation.configuration.qualityOfService = .userInitiated
+operation.configuration.container = container
+
+// Long-lived operations
+operation.configuration.longLivedOperationWasPersistedBlock = { }
+
+// Quality of Service
+operation.qualityOfService = .userInitiated  // .userInteractive, .utility, .background
+
+// Grouping
 operation.group = operationGroup
 
+// Control
 operation.cancel()
 operation.isCancelled
+```
+
+### CKOperation.Configuration
+
+```swift
+let config = CKOperation.Configuration()
+config.timeoutIntervalForRequest = 30      // Per-request timeout
+config.timeoutIntervalForResource = 300    // Total operation timeout
+config.isLongLived = true                  // Survives app termination
+config.allowsCellularAccess = true         // Use cellular data
+config.qualityOfService = .userInitiated   // Scheduling priority
+config.container = container               // Target container
 ```
 
 ### Record Operations
@@ -624,6 +738,13 @@ See [cksyncengine.md](cksyncengine.md) for complete guide.
 // Creation
 CKSyncEngine(configuration: config)
 
+// Configuration
+CKSyncEngine.Configuration(
+    database: database,
+    stateSerialization: savedState,
+    delegate: self
+)
+
 // Properties
 engine.database               // CKDatabase
 engine.state                  // CKSyncEngine.State
@@ -632,14 +753,43 @@ engine.state                  // CKSyncEngine.State
 engine.state.add(pendingRecordZoneChanges: [...])
 engine.state.add(pendingDatabaseChanges: [...])
 engine.state.remove(pendingRecordZoneChanges: [...])
+engine.state.pendingRecordZoneChanges  // [PendingRecordZoneChange]
+engine.state.pendingDatabaseChanges    // [PendingDatabaseChange]
 engine.state.hasPendingUploads
 
 // Manual Sync
 try await engine.fetchChanges()
+try await engine.fetchChanges(FetchChangesOptions())
 try await engine.sendChanges()
+try await engine.sendChanges(SendChangesOptions())
 
 // Cancel
 engine.cancelOperations()
+
+// Delegate Methods
+func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async
+func nextRecordZoneChangeBatch(_ context: SendChangesContext, syncEngine: CKSyncEngine) async -> RecordZoneChangeBatch?
+func nextFetchChangesOptions(_ context: FetchChangesContext, syncEngine: CKSyncEngine) async -> FetchChangesOptions
+
+// Event Types
+CKSyncEngine.Event.stateUpdate(StateUpdate)
+CKSyncEngine.Event.accountChange(AccountChange)
+CKSyncEngine.Event.fetchedDatabaseChanges(FetchedDatabaseChanges)
+CKSyncEngine.Event.fetchedRecordZoneChanges(FetchedRecordZoneChanges)
+CKSyncEngine.Event.sentDatabaseChanges(SentDatabaseChanges)
+CKSyncEngine.Event.sentRecordZoneChanges(SentRecordZoneChanges)
+CKSyncEngine.Event.willFetchChanges
+CKSyncEngine.Event.willFetchRecordZoneChanges
+CKSyncEngine.Event.didFetchRecordZoneChanges
+CKSyncEngine.Event.didFetchChanges
+CKSyncEngine.Event.willSendChanges
+CKSyncEngine.Event.didSendChanges
+
+// Pending Changes
+CKSyncEngine.PendingRecordZoneChange.saveRecord(CKRecord.ID)
+CKSyncEngine.PendingRecordZoneChange.deleteRecord(CKRecord.ID)
+CKSyncEngine.PendingDatabaseChange.saveZone(CKRecordZone.ID)
+CKSyncEngine.PendingDatabaseChange.deleteZone(CKRecordZone.ID)
 ```
 
 ### CKError
@@ -651,5 +801,92 @@ error.code                    // CKError.Code
 error.userInfo                // [String: Any]
 error.retryAfterSeconds       // Double?
 error.serverRecord            // CKRecord? (for conflicts)
+error.clientRecord            // CKRecord? (for conflicts)
+error.ancestorRecord          // CKRecord? (for conflicts)
 error.partialErrorsByItemID   // [AnyHashable: Error]?
+CKError.errorDomain           // String
+
+// All Error Codes
+.accountTemporarilyUnavailable
+.alreadyShared
+.assetFileModified
+.assetFileNotFound
+.assetNotAvailable
+.badContainer
+.badDatabase
+.batchRequestFailed
+.changeTokenExpired
+.constraintViolation
+.incompatibleVersion
+.internalError
+.invalidArguments
+.limitExceeded
+.managedAccountRestricted
+.missingEntitlement
+.networkFailure
+.networkUnavailable
+.notAuthenticated
+.operationCancelled
+.partialFailure
+.participantMayNeedVerification
+.permissionFailure
+.quotaExceeded
+.referenceViolation
+.requestRateLimited
+.serverRecordChanged
+.serverRejectedRequest
+.serverResponseLost
+.serviceUnavailable
+.tooManyParticipants
+.unknownItem
+.userDeletedZone
+.zoneBusy
+.zoneNotFound
+.resultsTruncated
+```
+
+---
+
+## Constants & Keys
+
+### Record Keys
+
+```swift
+CKRecordParentKey              // Parent reference key
+CKRecordShareKey               // Share reference key
+CKRecordTypeShare              // Share record type
+CKRecordTypeUserRecord         // User record type
+CKRecordZoneDefaultName        // Default zone name
+```
+
+### Share Keys
+
+```swift
+CKShare.SystemFieldKey.title               // Share title
+CKShare.SystemFieldKey.thumbnailImageData  // Thumbnail
+CKShare.SystemFieldKey.shareType           // Share type
+```
+
+### Error Keys
+
+```swift
+CKErrorDomain                         // Error domain
+CKErrorRetryAfterKey                  // Retry delay
+CKErrorUserDidResetEncryptedDataKey   // Encryption reset flag
+CKPartialErrorsByItemIDKey            // Partial failures
+```
+
+---
+
+## Deprecated (Avoid)
+
+These APIs are deprecated - use modern alternatives:
+
+```swift
+// Deprecated                          // Use Instead
+CKFetchRecordChangesOperation       → CKFetchRecordZoneChangesOperation
+CKDiscoverAllContactsOperation      → CKDiscoverAllUserIdentitiesOperation
+CKDiscoverUserInfosOperation        → CKDiscoverUserIdentitiesOperation
+CKFetchRecordChangesOperation       → CKFetchRecordZoneChangesOperation
+record.creatorUserRecordID          → still valid but may be nil
 ```
