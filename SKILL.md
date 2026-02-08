@@ -323,14 +323,19 @@ func preloadCloudKit() {
 
 ## References
 
-- [CKSyncEngine Guide](references/cksyncengine.md) — Complete implementation walkthrough
-- [CRUD Operations](references/crud-operations.md) — Direct database operations
-- [Error Handling](references/error-handling.md) — All CKError codes and handling
-- [Schema Design](references/schema-design.md) — Versioning, references, encryption
-- [Troubleshooting](references/troubleshooting.md) — Common issues and solutions
+- [CKSyncEngine Guide](references/cksyncengine.md) — Complete implementation walkthrough (iOS 17+)
+- [CRUD Operations](references/crud-operations.md) — Direct database operations, queries, assets
+- [Operations Reference](references/operations.md) — All CKOperation classes, batching, pagination
+- [Subscriptions & Notifications](references/subscriptions-notifications.md) — Push notifications, real-time sync
+- [Sharing](references/sharing.md) — CKShare, UICloudSharingController, zone sharing
+- [Error Handling](references/error-handling.md) — All CKError codes and retry strategies
+- [Schema Design](references/schema-design.md) — Versioning, references, encryption, migrations
+- [Troubleshooting](references/troubleshooting.md) — Common issues, debugging, CloudKit Dashboard
 
 ## External Resources
 
-- [Apple Sample Project](https://github.com/apple/sample-cloudkit-sync-engine)
+- [Apple Sample: CKSyncEngine](https://github.com/apple/sample-cloudkit-sync-engine)
+- [Apple Sample: Zone Sharing](https://github.com/apple/sample-cloudkit-zonesharing)
 - [Apple CloudKit Documentation](https://developer.apple.com/documentation/cloudkit)
 - [CloudKit Dashboard](https://icloud.developer.apple.com)
+- [WWDC Videos](https://developer.apple.com/videos/frameworks/cloudkit)
