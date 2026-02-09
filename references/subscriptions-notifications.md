@@ -535,3 +535,119 @@ notificationInfo.desiredKeys = ["title"]  // Not all fields
 // Use one zone subscription:
 let zoneSub = CKRecordZoneSubscription(zoneID: zoneID)
 ```
+
+## Anti-Patterns
+
+### ❌ Creating Duplicate Subscriptions
+
+```swift
+// BAD: Creates duplicate on every app launch
+func application(_ application: UIApplication, didFinishLaunchingWithOptions...) {
+    let subscription = CKQuerySubscription(recordType: "Item", predicate: predicate, options: .firesOnRecordCreation)
+    database.save(subscription) { _, _ in }
+}
+
+// GOOD: Check before creating, use consistent ID
+let subscriptionID = "item-creation-subscription"
+
+database.fetch(withSubscriptionID: subscriptionID) { subscription, error in
+    if subscription == nil {
+        let newSubscription = CKQuerySubscription(
+            recordType: "Item",
+            predicate: predicate,
+            subscriptionID: subscriptionID,
+            options: .firesOnRecordCreation
+        )
+        let info = CKSubscription.NotificationInfo()
+        info.shouldSendContentAvailable = true
+        newSubscription.notificationInfo = info
+        database.save(newSubscription) { _, _ in }
+    }
+}
+```
+
+### ❌ Missing NotificationInfo
+
+```swift
+// BAD: Subscription will fail to save
+let subscription = CKQuerySubscription(recordType: "Item", predicate: predicate, options: .firesOnRecordCreation)
+database.save(subscription) { _, error in }  // Error!
+
+// GOOD: Always configure notificationInfo
+let info = CKSubscription.NotificationInfo()
+info.shouldSendContentAvailable = true
+subscription.notificationInfo = info
+```
+
+### ❌ Wrong Subscription Type for Shared Database
+
+```swift
+// BAD: CKQuerySubscription doesn't work with shared database
+let sharedDB = CKContainer.default().sharedCloudDatabase
+let subscription = CKQuerySubscription(recordType: "SharedItem", predicate: predicate, options: .firesOnRecordCreation)
+sharedDB.save(subscription) { _, error in }  // Error!
+
+// GOOD: Use CKDatabaseSubscription for shared database
+let subscription = CKDatabaseSubscription(subscriptionID: "shared-db-subscription")
+let info = CKSubscription.NotificationInfo()
+info.shouldSendContentAvailable = true
+subscription.notificationInfo = info
+sharedDB.save(subscription) { _, _ in }
+```
+
+### ❌ Relying Solely on Push for Sync
+
+```swift
+// BAD: Only syncing when push arrives
+func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) {
+    syncData()  // Only sync trigger
+}
+
+// GOOD: Multiple sync triggers
+func applicationDidBecomeActive(_ application: UIApplication) {
+    syncData()  // On app launch/foreground
+}
+
+func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) {
+    syncData()  // On notification
+}
+// Also implement background fetch
+```
+
+### ❌ Not Indexing Predicate Fields
+
+```swift
+// BAD: Field not indexed in CloudKit Dashboard
+let predicate = NSPredicate(format: "category == %@", "news")
+// Error: CKError.invalidArguments when saving subscription
+
+// FIX: Enable "Query" indexing for field in CloudKit Dashboard
+```
+
+### Subscription Manager Pattern
+
+```swift
+class SubscriptionManager {
+    private let subscriptionKey = "cloudkit.subscription.created"
+
+    func ensureSubscriptionExists() {
+        guard !UserDefaults.standard.bool(forKey: subscriptionKey) else { return }
+
+        let subscription = CKDatabaseSubscription(subscriptionID: "all-changes")
+        let info = CKSubscription.NotificationInfo()
+        info.shouldSendContentAvailable = true
+        subscription.notificationInfo = info
+
+        let operation = CKModifySubscriptionsOperation(
+            subscriptionsToSave: [subscription],
+            subscriptionIDsToDelete: nil
+        )
+        operation.modifySubscriptionsResultBlock = { result in
+            if case .success = result {
+                UserDefaults.standard.set(true, forKey: self.subscriptionKey)
+            }
+        }
+        database.add(operation)
+    }
+}
+```

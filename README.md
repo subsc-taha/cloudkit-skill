@@ -145,21 +145,6 @@ Browse the documentation directly on GitHub or clone for local access.
 - [Apple Sample: Zone Sharing](https://github.com/apple/sample-cloudkit-zonesharing)
 - [CloudKit Dashboard](https://icloud.developer.apple.com)
 
-## ⚠️ iOS 26+ Note
-
-iOS 26 introduced a thread-safety bug (FB18043319). Initialize CloudKit on main thread:
-
-```swift
-import Network
-
-@MainActor
-func preloadCloudKit() {
-    if #available(iOS 26.0, *) {
-        _ = nw_tls_create_options()
-    }
-}
-```
-
 ## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.

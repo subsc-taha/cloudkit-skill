@@ -357,3 +357,135 @@ let query = CKQuery(recordType: "Note", predicate: predicate)
 | `CKAsset` | Asset (files) |
 | `CKRecord.Reference` | Reference |
 | `[Any]` | List (of above types) |
+
+## Anti-Patterns
+
+### ❌ Using Default Zone for Production
+
+```swift
+// BAD: Default zone lacks atomic operations and sharing
+let record = CKRecord(recordType: "Note")
+privateDB.save(record) { _, _ in }
+
+// GOOD: Use custom zone
+let zoneID = CKRecordZone.ID(zoneName: "NotesZone", ownerName: CKCurrentUserDefaultName)
+let recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: zoneID)
+let record = CKRecord(recordType: "Note", recordID: recordID)
+```
+
+### ❌ Missing Account Status Check
+
+```swift
+// BAD: Assumes iCloud is available
+func saveUserData() {
+    container.privateCloudDatabase.save(record) { _, _ in }
+}
+
+// GOOD: Check account status first
+container.accountStatus { status, error in
+    guard status == .available else {
+        // Handle: .noAccount, .restricted, .couldNotDetermine, .temporarilyUnavailable
+        return
+    }
+    self.container.privateCloudDatabase.save(record) { _, _ in }
+}
+```
+
+### ❌ Not Observing Account Changes
+
+```swift
+// BAD: Assumes account persists
+class DataManager {
+    let container = CKContainer.default()
+}
+
+// GOOD: Observe account changes
+NotificationCenter.default.addObserver(
+    forName: .CKAccountChanged,
+    object: nil,
+    queue: .main
+) { _ in
+    // Re-check account status, clear private data cache if user changed
+}
+```
+
+### ❌ Individual Saves Instead of Batch
+
+```swift
+// BAD: Separate network call for each record
+for record in records {
+    database.save(record) { _, _ in }
+}
+
+// GOOD: Single batch operation
+let operation = CKModifyRecordsOperation(recordsToSave: records, recordIDsToDelete: nil)
+operation.modifyRecordsResultBlock = { result in }
+database.add(operation)
+```
+
+### ❌ Storing Child Arrays in Parent
+
+```swift
+// BAD: Causes conflict resolution nightmares
+let parentRecord = CKRecord(recordType: "Album")
+parentRecord["photoIDs"] = photoIDs as CKRecordValue
+
+// GOOD: Child references parent
+let photoRecord = CKRecord(recordType: "Photo")
+let albumRef = CKRecord.Reference(recordID: albumRecord.recordID, action: .deleteSelf)
+photoRecord["album"] = albumRef
+```
+
+### ❌ String Literals for Keys
+
+```swift
+// BAD: Typos won't be caught
+record["titel"] = title
+
+// GOOD: Type-safe keys
+enum RecordKeys: String {
+    case title, createdAt, category
+}
+record[RecordKeys.title.rawValue] = title
+```
+
+### ❌ Exceeding Record Size
+
+```swift
+// BAD: May exceed 1MB limit
+record["imageData"] = largeImageData as CKRecordValue
+
+// GOOD: Use CKAsset for binary data
+let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("temp.jpg")
+try imageData.write(to: tempURL)
+record["image"] = CKAsset(fileURL: tempURL)
+```
+
+### ❌ UI Updates on Background Thread
+
+```swift
+// BAD: CloudKit callbacks are on background thread
+database.fetch(withRecordID: recordID) { record, error in
+    self.titleLabel.text = record?["title"] as? String  // Crash!
+}
+
+// GOOD: Dispatch to main thread
+database.fetch(withRecordID: recordID) { record, error in
+    DispatchQueue.main.async {
+        self.titleLabel.text = record?["title"] as? String
+    }
+}
+```
+
+### ❌ Downloading All Fields
+
+```swift
+// BAD: Downloads everything including large assets
+let query = CKQuery(recordType: "Photo", predicate: predicate)
+database.perform(query, inZoneWith: nil) { records, error in }
+
+// GOOD: Only fetch needed fields
+let operation = CKQueryOperation(query: query)
+operation.desiredKeys = ["title", "timestamp"]
+database.add(operation)
+```

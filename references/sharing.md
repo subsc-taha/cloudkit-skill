@@ -486,3 +486,136 @@ class SyncManager {
     }
 }
 ```
+
+## Anti-Patterns
+
+### ❌ Using Default Zone for Sharing
+
+```swift
+// BAD: CKShare cannot be saved in Default Zone
+let record = CKRecord(recordType: "Item")  // Uses default zone
+let share = CKShare(rootRecord: record)
+try await privateDatabase.save(share)  // ERROR!
+
+// GOOD: Use custom zone
+let zoneID = CKRecordZone.ID(zoneName: "SharedItems", ownerName: CKCurrentUserDefaultName)
+let recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: zoneID)
+let record = CKRecord(recordType: "Item", recordID: recordID)
+let share = CKShare(rootRecord: record)
+try await privateDatabase.modifyRecords(saving: [record, share], deleting: [])
+```
+
+### ❌ Saving CKShare Without Root Record
+
+```swift
+// BAD: Even if record exists, must save together
+let share = CKShare(rootRecord: existingRecord)
+try await privateDatabase.save(share)  // ERROR!
+
+// GOOD: Save both together
+try await privateDatabase.modifyRecords(saving: [existingRecord, share], deleting: [])
+```
+
+### ❌ Creating New Shares for Already-Shared Records
+
+```swift
+// BAD: Revokes existing share, removes all participants
+func shareContact(_ contact: CKRecord) async throws {
+    let share = CKShare(rootRecord: contact)  // Creates NEW share!
+    try await privateDatabase.modifyRecords(saving: [contact, share], deleting: [])
+}
+
+// GOOD: Check for existing share first
+func shareContact(_ contact: CKRecord) async throws -> CKShare {
+    if let existingShareRef = contact.share {
+        return try await privateDatabase.record(for: existingShareRef.recordID) as! CKShare
+    }
+    let share = CKShare(rootRecord: contact)
+    try await privateDatabase.modifyRecords(saving: [contact, share], deleting: [])
+    return share
+}
+```
+
+### ❌ Not Verifying Permissions Before Modification
+
+```swift
+// BAD: Assumes write access
+func updateSharedRecord(_ record: CKRecord) async throws {
+    record["name"] = "Updated"
+    try await sharedDatabase.save(record)  // Fails if readOnly!
+}
+
+// GOOD: Check permission first
+func canModify(share: CKShare) -> Bool {
+    guard let participant = share.currentUserParticipant else { return false }
+    return participant.permission == .readWrite || participant.role == .owner
+}
+```
+
+### ❌ Missing CKSharingSupported in Info.plist
+
+```xml
+<!-- Required for share acceptance callbacks -->
+<key>CKSharingSupported</key>
+<true/>
+```
+
+Without this, `userDidAcceptCloudKitShareWith` is never called.
+
+### ❌ Not Handling Share Acceptance
+
+```swift
+// BAD: Share links won't work
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    // Missing implementation
+}
+
+// GOOD: Implement share acceptance
+func windowScene(
+    _ windowScene: UIWindowScene,
+    userDidAcceptCloudKitShareWith metadata: CKShare.Metadata
+) {
+    let container = CKContainer(identifier: metadata.containerIdentifier)
+    Task {
+        do {
+            try await container.accept(metadata)
+        } catch {
+            // Handle error
+        }
+    }
+}
+```
+
+### ❌ Not Setting Share Metadata
+
+```swift
+// BAD: Email invitations show no context
+let share = CKShare(rootRecord: record)
+
+// GOOD: Set title for user-friendly invitations
+let share = CKShare(rootRecord: record)
+share[CKShare.SystemFieldKey.title] = "Shopping List"
+share[CKShare.SystemFieldKey.shareType] = "com.app.shoppinglist"
+share[CKShare.SystemFieldKey.thumbnailImageData] = thumbnailData
+```
+
+### ❌ Multiple CKShare per Zone
+
+```swift
+// BAD: Only ONE CKShare allowed per zone for zone-wide sharing
+let share1 = CKShare(recordZoneID: zoneID)
+try await privateDatabase.save(share1)
+let share2 = CKShare(recordZoneID: zoneID)  // ERROR on save!
+
+// GOOD: Check for existing zone share
+func getOrCreateZoneShare(for zoneID: CKRecordZone.ID) async throws -> CKShare {
+    let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
+    do {
+        return try await privateDatabase.record(for: shareID) as! CKShare
+    } catch {
+        let share = CKShare(recordZoneID: zoneID)
+        try await privateDatabase.save(share)
+        return share
+    }
+}
+```

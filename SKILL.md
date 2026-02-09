@@ -7,6 +7,34 @@ description: Apple CloudKit framework for iOS/macOS/watchOS/tvOS development. Us
 
 CloudKit is Apple's framework for iCloud data persistence with up to **1PB public storage** and automatic cross-device sync.
 
+## Code Review Checklist
+
+When reviewing CloudKit code, verify:
+
+- [ ] Account status checked before private/shared database operations
+- [ ] Custom zones used (not default zone) for production data
+- [ ] All CloudKit errors handled with `retryAfterSeconds` respected
+- [ ] `serverRecordChanged` conflicts handled with proper merge logic
+- [ ] `CKErrorPartialFailure` parsed for individual record errors
+- [ ] Batch operations used (`CKModifyRecordsOperation`) not individual saves
+- [ ] Large binary data stored as `CKAsset` (records have 1MB limit)
+- [ ] Record keys type-safe (enums) not string literals
+- [ ] UI updates dispatched to main thread from callbacks
+- [ ] `CKAccountChangedNotification` observed for account switches
+- [ ] Subscriptions have unique IDs to prevent duplicates
+- [ ] CKShare uses custom zone (sharing requires custom zones)
+- [ ] CKSyncEngine state token cached on every `.stateUpdate` event
+- [ ] Schema deployed to production before App Store release
+
+### Review Output Format
+
+Report issues as: `[FILE:LINE] ISSUE_TITLE`
+
+Examples:
+- `[SyncManager.swift:45] Missing CKSyncEngine state token persistence`
+- `[DataStore.swift:89] Unhandled serverRecordChanged conflict`
+- `[CloudKit.swift:156] Individual saves instead of batch operation`
+
 ## Quick Start
 
 ```swift
@@ -305,21 +333,6 @@ Access at: https://icloud.developer.apple.com
 6. **Test on physical devices** — simulator has limitations
 7. **Don't use enums in synced data** — use strings instead (forward compatibility)
 8. **Keep change tokens after fetches** — commit only after local save succeeds
-
-## iOS 26+ Crash Fix (FB18043319)
-
-iOS 26 introduced a thread-safety bug. Initialize CloudKit on main thread:
-
-```swift
-import Network
-
-@MainActor
-func preloadCloudKit() {
-    if #available(iOS 26.0, *) {
-        _ = nw_tls_create_options()  // Forces dispatch_once on main thread
-    }
-}
-```
 
 ## References
 
